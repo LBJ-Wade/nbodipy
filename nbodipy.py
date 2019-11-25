@@ -10,32 +10,38 @@ sheridan.green@yale.edu
 Nov 2019
 """
 
-from numba import njit
+from numba import njit, jit, prange
+from root_finding import brentq
+from scalar_maximization import brent_max
 from numpy.random import rand, randint, seed
 from numpy import log, log10, abs, exp, inf
-from numpy import zeros, pi, sqrt, sin, cos
-from numpy import repeat, any, sum
+from numpy import zeros, pi, sqrt, sin, cos, savetxt
+from numpy import repeat, any, sum, column_stack
 from scipy.optimize import ridder, brent
 
-@njit
+@njit(fastmath=True)
 def NFWf(c):
     return log(1. + c) - c/(1. + c)
 
-@njit
+@njit(fastmath=True)
 def NFWpotential(r):
     return log(1. + r) / r
 
-#@njit
+@njit(fastmath=True)
+def fr_fx(xlgr, enc_m):
+    return NFWf(10.**xlgr) - enc_m
+
+@njit(fastmath=True, parallel=True)
 def find_r(enc_m, rtrunc):
     Npart = len(enc_m)
     lg_rtrunc = log10(rtrunc)
     lgrads = zeros(Npart)
-    for i in range(0, Npart):
-        fx = lambda xlgr: NFWf(10.**xlgr) - enc_m[i]
-        lgrads[i] = ridder(fx, -5., lg_rtrunc, xtol=1e-4)
+    for i in prange(0, Npart):
+        lgrads[i] = brentq(fr_fx, -5., lg_rtrunc, xtol=1e-4, args=(enc_m[i],)).root
+
     return 10**lgrads
 
-@njit
+@njit(fastmath=True)
 def dist_func(e):
     F0 = 9.1968E-2
     q = -2.7419
@@ -44,33 +50,36 @@ def dist_func(e):
     p3 = -0.0859
     p4 = -0.4912
 
-    e2 = 1-e
+    e2 = 1. - e
     pp = p1 * e + p2 * e**2 + p3 * e**3 + p4 * e**4
     fac1 = e**(1.5) / e2**(2.5)
     fac2 = (-1.*log(e)/e2)**q
     fac3 = exp(pp)
     return F0 * fac1 * fac2 * fac3
 
-@njit
+@njit(fastmath=True)
 def fevsq(v, p):
     fe = dist_func(p - v**2 / 2.)
     if(fe == 0 or v == 0):
-        return inf
+        return -inf
     else:
-        return 1. / (fe * v**2)
+        return -1. / (fe * v**2)
 
+@njit(fastmath=True, parallel=True)
 def find_pmax(vesc, psi):
     Npart = len(vesc)
     pmax = zeros(Npart)
-    for i in range(0, Npart):
-        _, pmax[i], _, fc = brent(fevsq, args=(psi[i],), brack=(1E-8, vesc[i]), tol=1.0E-4, full_output=True)
-    return 1.001 / pmax
+    vmax = zeros(Npart)
+    for i in prange(0, Npart):
+        vmax[i], pmax[i], num = brent_max(fevsq, 1E-8, .99999*vesc[i], args=(psi[i],), xtol=1.0E-4)
+    return -1.001 / pmax, vmax
 
 
 def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
     fc = NFWf(conc)
     Mc = NFWf(rtrunc) / fc
     mpart = Mc / float(Npart)
+    mpart = repeat([mpart], Npart)
 
     # generate Npart random numbers
     # translated to enclosed masses
@@ -80,6 +89,7 @@ def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
     r = find_r(prob, rtrunc)
 
     # generate phi and cos(theta)
+    # for random positions at each radius
     phi = rand(Npart) * 2. * pi
     costheta = 2.*rand(Npart) - 1.
     sintheta = sqrt(1. - costheta**2.)
@@ -90,12 +100,13 @@ def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
 
     psi = NFWpotential(r)
     vesc = sqrt(2. * abs(psi))
-    pmax = find_pmax(vesc, psi)
+    pmax, vmax = find_pmax(vesc, psi)
 
+    # run rejection algorithm
     msk = repeat([True], Npart)
     vvals = zeros(Npart)
     total = 0
-    while(any(msk)): # while some have failed
+    while(any(msk)): # while there are still rejections
         this_try = sum(msk)
         total += this_try
         vvals[msk] = rand(this_try) * vesc[msk]
@@ -104,7 +115,7 @@ def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
 
     energy = psi - vvals**2 / 2.
 
-    # random orientations in v-sapce
+    # generate random orientations for velocities
     phi = rand(Npart) * 2. * pi
     costheta = 2. * rand(Npart) - 1.
     sintheta = sqrt(1. - costheta**2)
@@ -114,10 +125,17 @@ def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
     vz = vvals * costheta
 
     # we're done!
-    # convert units, etc.
+    # convert units, etc. and output
     print("Generated %d particles with %d total tries." % (Npart, total))
 
+    vx = vx / sqrt(fc)
+    vy = vy / sqrt(fc)
+    vz = vz / sqrt(fc)
+    vmax = vmax / sqrt(fc)
 
+    out = column_stack((mpart, x, y, z, vx, vy, vz))
+    savetxt(oname, out, header='%d' % Npart, comments='')
+    print("Output ICs to %s" % oname)
 
 
 if __name__ == "__main__":
