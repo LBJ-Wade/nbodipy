@@ -108,6 +108,7 @@ def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
     pmax, vmax = find_pmax(vesc, psi)
 
     # run rejection algorithm
+    # Explained in S4.1 of Kuijken and Dubinski ( 1994)
     msk = repeat([True], Npart)
     vvals = zeros(Npart)
     total = 0
