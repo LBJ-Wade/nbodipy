@@ -43,6 +43,9 @@ def find_r(enc_m, rtrunc):
 
 @njit(fastmath=True)
 def dist_func(e):
+    # Fitting function for an NFW
+    # distribution function using Table 2
+    # and eqn A2 from Widrow (2000)
     F0 = 9.1968E-2
     q = -2.7419
     p1 = 0.3620
@@ -70,6 +73,8 @@ def find_pmax(vesc, psi):
     Npart = len(vesc)
     pmax = zeros(Npart)
     vmax = zeros(Npart)
+    # find maximum of distribution function * v**2
+    # for each particle's r
     for i in prange(0, Npart):
         vmax[i], pmax[i], num = brent_max(fevsq, 1E-8, .99999*vesc[i], args=(psi[i],), xtol=1.0E-4)
     return -1.001 / pmax, vmax
@@ -109,8 +114,12 @@ def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
     while(any(msk)): # while there are still rejections
         this_try = sum(msk)
         total += this_try
+        # sample uniformly in 0 to vesc
         vvals[msk] = rand(this_try) * vesc[msk]
         ff = dist_func(psi[msk] - vvals[msk]**2 / 2.) * vvals[msk]**2
+        # keep the randomly sampled point if a second uniformly
+        # sampled point in range of 0 to max(f(E)*v**2) is
+        # below the value of f(E)*v**2 for our sampled v
         msk[msk] = rand(this_try) > ff/pmax[msk]
 
     energy = psi - vvals**2 / 2.
