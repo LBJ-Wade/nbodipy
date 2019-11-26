@@ -5,7 +5,7 @@ code. Draws (x,y,z) and (vx,vy,vz) for an NFW halo of concentration c.
 Units adopted such that G = M = r_s = 1.
 Output is in binary format for use with Go Ogiya's gputree code.
 
-Sheridan Beckwith Green
+Sheridan B. Green
 sheridan.green@yale.edu
 Nov 2019
 """
@@ -37,7 +37,8 @@ def find_r(enc_m, rtrunc):
     lg_rtrunc = log10(rtrunc)
     lgrads = zeros(Npart)
     for i in prange(0, Npart):
-        lgrads[i] = brentq(fr_fx, -5., lg_rtrunc, xtol=1e-4, args=(enc_m[i],)).root
+        lgrads[i] = brentq(fr_fx, -5., lg_rtrunc, xtol=1e-4,
+                           args=(enc_m[i],)).root
 
     return 10**lgrads
 
@@ -76,7 +77,8 @@ def find_pmax(vesc, psi):
     # find maximum of distribution function * v**2
     # for each particle's r
     for i in prange(0, Npart):
-        vmax[i], pmax[i], num = brent_max(fevsq, 1E-8, .99999*vesc[i], args=(psi[i],), xtol=1.0E-4)
+        vmax[i], pmax[i], num = brent_max(fevsq, 1E-8, .99999*vesc[i],
+                                          args=(psi[i],), xtol=1.0E-4)
     return -1.001 / pmax, vmax
 
 
@@ -144,7 +146,7 @@ def nbodipy(Npart, conc, rtrunc, oname='output.dat', sd=randint(2**32)):
     vmax = vmax / sqrt(fc)
 
     out = column_stack((mpart, x, y, z, vx, vy, vz))
-    savetxt(oname, out, header='%d' % Npart, comments='')
+    savetxt(oname, out, fmt='%.7E', header='%d' % Npart, comments='')
     print("Output ICs to %s" % oname)
 
 
